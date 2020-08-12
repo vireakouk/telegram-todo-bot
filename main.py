@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from logging import Logger
 from datetime import datetime
 import json
+import requests
 
 #TelegramAPI
 TOKEN = '1261141644:AAFQ3R_EdT5GYVLvADFt9mPT45JzgI0STEE'
@@ -31,6 +32,16 @@ class Todo(db.Model):
     post_title = db.Column(db.String(64))
     post_desc = db.Column(db.String(255))
     date_created = db.Column(db.DateTime)
+
+#Extract Data from Telegram API - Conflict: can't use getUpdates method while webhook is active
+url = TELEGRAM_API + 'getUpdates'
+print(url)
+request_url = requests.get(url)
+print(request_url)
+raw_data = request_url.content.decode('utf8')
+print(raw_data)
+json_data = json.loads(raw_data)
+print(json_data)
 
 #Flask APP route
 @app.route('/')
