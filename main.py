@@ -1,13 +1,14 @@
 from flask import Flask, redirect, request
 from flask_sqlalchemy import SQLAlchemy
+from credentials import telegram_token, telegram_api
 from logging import Logger
 from datetime import datetime
 import json
 import requests
 
 #TelegramAPI
-TOKEN = '1261141644:AAFQ3R_EdT5GYVLvADFt9mPT45JzgI0STEE'
-TELEGRAM_API = 'https://api.telegram.org/bot{}/'.format(TOKEN)
+TOKEN = telegram_token
+TELEGRAM_API = telegram_api
 
 #Starting Flask
 app = Flask(__name__)
