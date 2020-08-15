@@ -1,5 +1,6 @@
 from flask import Flask, redirect, request
 from flask_sqlalchemy import SQLAlchemy
+import telegram
 from credentials import telegram_token, telegram_api
 from logging import Logger
 from datetime import datetime
@@ -9,6 +10,8 @@ import requests
 #TelegramAPI
 TOKEN = telegram_token
 TELEGRAM_API = telegram_api
+bot = telegram.Bot(token=TOKEN)
+print(bot)
 
 #Starting Flask
 app = Flask(__name__)
@@ -34,19 +37,32 @@ class Todo(db.Model):
     post_desc = db.Column(db.String(255))
     date_created = db.Column(db.DateTime)
 
-#Extract Data from Telegram API - Conflict: can't use getUpdates method while webhook is active
-url = TELEGRAM_API + 'getUpdates'
-print(url)
-request_url = requests.get(url)
-print(request_url)
-raw_data = request_url.content.decode('utf8')
-print(raw_data)
-json_data = json.loads(raw_data)
-print(json_data)
-
 #Flask APP route
-@app.route('/')
-def home():
-    return 'hello world'
+@app.route('/', methods=['POST', 'GET'])
+def respond():
+    app.logger.info('respond')
+    if request.method == 'POST':
+        # retrieve the message json and then automatically transform it to dictionary
+        update = request.get_json(force=True)
+        print(update)
+        #retrieve chat_id
+        chat_id = update['message']['chat']['id']
+        print(chat_id)
 
-#@app.route('/setWebhook')
+        if 'message' in update:
+            message_id = update['message']['message_id']
+            text = update['message']['text']
+            print(text)
+            if text == '/start':
+                bot.sendChatAction(chat_id=chat_id, action='typing')
+                bot.sendMessage(chat_id=chat_id, text='Welcome to My Telegram Todo List', parse_mode='html')
+
+    # if request.is_json:
+    #     print("is json")
+    #     data = request.get_json()
+    #     print("type of data {}".format(type(data))) # type dict
+    #     print("data as string {}".format(json.dumps(data)))
+    #     print ("keys {}".format(json.dumps(data.keys())))
+        return 'webhook works'
+    else:
+        return 'ok'
