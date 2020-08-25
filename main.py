@@ -26,19 +26,25 @@ session = db.session
 class User(db.Model):
     __tablename__ = 'USER'
     user_id = db.Column(db.SmallInteger, primary_key=True, autoincrement=True)
-    telegram_id = db.Column(db.BigInteger)
-    todo_list = db.relationship('Todo', backref=db.backref('owner', lazy=True))
-    user_name = db.Column(db.String)
+    telegram_id = db.Column(db.BigInteger, unique=True, nullable=False)
+    todo_list = db.relationship('Todo', backref='owner', lazy=True)
+    username = db.Column(db.String(64), unique=True, nullable=True)
     state = db.Column(db.SmallInteger, default=0)
-    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"User('{self.user_id}', '{self.username}', '{self.telegram_id}', '{self.todo_list}')"
 
 class Todo(db.Model):
     __tablename__ = 'TODO'
     id = db.Column(db.SmallInteger, primary_key=True, autoincrement=True)
-    owner_id = db.Column(db.BigInteger, db.ForeignKey('USER.user_id'))
+    owner_id = db.Column(db.BigInteger, db.ForeignKey('USER.telegram_id'), nullable=False)
     post_title = db.Column(db.String(64))
     post_desc = db.Column(db.String(255))
-    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"Todo('{self.id}', '{self.owner_id}', '{self.post_title}', '{self.post_desc}')"
 
 #build todo_keyboard with 3 buttons
 todo_buttons = [
@@ -56,18 +62,24 @@ def respond():
         # retrieve the message json and then automatically transform it to dictionary
         update = request.get_json()
         print(update)
+        show_todo = 'Here is your todo list:\n'
+
 
 
         if 'message' in update:
             chat_id = update['message']['chat']['id']
-            first_name = update['message']['chat']['first_name'] 
+            username = update['message']['chat']['username'] 
             message_id = update['message']['message_id']
             text = update['message']['text']
+
             current_user = User.query.filter_by(telegram_id=chat_id).first()
+            print(current_user)
+            current_todo = Todo.query.filter_by(owner_id=chat_id).order_by((Todo.date_created.desc())).first()
+            print(current_todo)
 
             #if user doesn't exist, add that user into database
-            if session.query(User).filter_by(telegram_id=chat_id).first() is None:
-                session.add(User(telegram_id=chat_id, user_name=first_name))
+            if current_user is None:
+                session.add(User(telegram_id=chat_id, username=username))
                 session.commit()
             
             if text == '/start':
@@ -75,29 +87,57 @@ def respond():
                 bot.sendMessage(chat_id=chat_id, text='Welcome to My Telegram Todo List', parse_mode='html', reply_markup=todo_keyboard)
             
             elif current_user.state == 1:
-                # session.add(Todo(user_id=current_user.user_id, post_title=text))
-                session.query(User).filter_by(telegram_id=chat_id).update({'state': 11})
+                session.add(Todo(owner=current_user, post_title=text))
+                # session.query(User).filter_by(telegram_id=chat_id).update({'state': 11})
+                current_user.state = 11
                 session.commit()
                 bot.sendMessage(chat_id=chat_id, text='Please Enter Todo description:', parse_mode='html')
 
             elif current_user.state == 11:
-            #     session.query(Todo).filter_by(user_id=User.user_id).update({'post_description': text})
-                session.query(User).filter_by(telegram_id=chat_id).update({'state': 0})
+                current_todo.post_desc = text
+                current_user.state = 0
+                # session.query(User).filter_by(telegram_id=chat_id).update({'state': 0})
                 session.commit()
-                bot.sendMessage(chat_id=chat_id, text='Your Todo list is updated.', parse_mode='html')
-            
+                bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
+                
+                for row in current_user.todo_list:
+                    show_todo = show_todo + str(row.id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+                
+                bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
+
+            elif current_user.state == 3:
+                Todo.query.filter_by(id=int(text)).delete()
+                current_user.state = 0
+                # reset_id_command = f'ALTER TABLE TODO AUTO_INCREMENT = {int(current_todo.id)}'
+                # session.execute(reset_id_command)
+                session.commit()
+                bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
+                
+                for row in current_user.todo_list:
+                    show_todo = show_todo + str(row.id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+                
+                bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
+
         if 'callback_query' in update:
             chat_id = update['callback_query']['message']['chat']['id']
             callback_id = int(update['callback_query']['data'])
+            current_user = User.query.filter_by(telegram_id=chat_id).first()
+            for row in current_user.todo_list:
+                    show_todo = show_todo + str(row.id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
 
             if callback_id == 1:
-                session.query(User).filter_by(telegram_id=chat_id).update({'state': callback_id})
+                current_user.state = 1
                 session.commit()
                 bot.sendMessage(chat_id=chat_id, text='Please Enter Todo title:', parse_mode='html')
             if callback_id == 2:
-                pass
-            if callback_id ==3:
-                pass
+                current_user.state = 2
+                session.commit()
+                bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html')
+            if callback_id == 3:
+                current_user.state = 3
+                session.commit()
+                bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html')
+                bot.sendMessage(chat_id=chat_id, text='Please Enter the Todo ID you want to delete:', parse_mode='html')
 
 
         return 'webhook works'
