@@ -41,6 +41,7 @@ class Todo(db.Model):
     owner_id = db.Column(db.BigInteger, db.ForeignKey('USER.telegram_id'), nullable=False)
     post_title = db.Column(db.String(64))
     post_desc = db.Column(db.String(255))
+    order_id = db.Column(db.SmallInteger, nullable=True)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     def __repr__(self):
@@ -63,8 +64,7 @@ def respond():
         update = request.get_json()
         print(update)
         show_todo = 'Here is your todo list:\n'
-
-
+        i = 0
 
         if 'message' in update:
             chat_id = update['message']['chat']['id']
@@ -101,12 +101,15 @@ def respond():
                 bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
                 
                 for row in current_user.todo_list:
-                    show_todo = show_todo + str(row.id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+                    i += 1
+                    row.order_id = i
+                    session.commit()
+                    show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
                 
                 bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
 
             elif current_user.state == 3:
-                Todo.query.filter_by(id=int(text)).delete()
+                Todo.query.filter_by(order_id=int(text)).delete()
                 current_user.state = 0
                 # reset_id_command = f'ALTER TABLE TODO AUTO_INCREMENT = {int(current_todo.id)}'
                 # session.execute(reset_id_command)
@@ -114,7 +117,10 @@ def respond():
                 bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
                 
                 for row in current_user.todo_list:
-                    show_todo = show_todo + str(row.id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+                    i += 1
+                    row.order_id = i
+                    session.commit()
+                    show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
                 
                 bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
 
@@ -123,7 +129,10 @@ def respond():
             callback_id = int(update['callback_query']['data'])
             current_user = User.query.filter_by(telegram_id=chat_id).first()
             for row in current_user.todo_list:
-                    show_todo = show_todo + str(row.id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+                i += 1
+                row.order_id = i
+                session.commit()
+                show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
 
             if callback_id == 1:
                 current_user.state = 1
