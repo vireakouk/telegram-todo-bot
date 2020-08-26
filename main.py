@@ -1,5 +1,5 @@
 from flask import Flask, redirect, request
-from flask_sqlalchemy import SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy, and_
 import telegram
 from credentials import telegram_token, telegram_api
 from logging import Logger
@@ -88,7 +88,6 @@ def respond():
             
             elif current_user.state == 1:
                 session.add(Todo(owner=current_user, post_title=text))
-                # session.query(User).filter_by(telegram_id=chat_id).update({'state': 11})
                 current_user.state = 11
                 session.commit()
                 bot.sendMessage(chat_id=chat_id, text='Please Enter Todo description:', parse_mode='html')
@@ -96,32 +95,34 @@ def respond():
             elif current_user.state == 11:
                 current_todo.post_desc = text
                 current_user.state = 0
-                # session.query(User).filter_by(telegram_id=chat_id).update({'state': 0})
                 session.commit()
                 bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
                 
                 for row in current_user.todo_list:
                     i += 1
                     row.order_id = i
-                    session.commit()
                     show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
-                
+                session.commit()
                 bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
 
             elif current_user.state == 3:
-                Todo.query.filter_by(order_id=int(text)).delete()
-                current_user.state = 0
-                # reset_id_command = f'ALTER TABLE TODO AUTO_INCREMENT = {int(current_todo.id)}'
-                # session.execute(reset_id_command)
-                session.commit()
-                bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
+                try:
+                    delete_id = int(text)
+                    if Todo.query.filter_by(and_(owner_id=chat_id, order_id=delete_id)) is None:
+                        bot.sendMessage(chat_id=chat_id, text='There is no such item in your todo list.', parse_mode='html')
+                    else:
+                        Todo.query.filter_by(and_(owner_id=chat_id, order_id=delete_id)).delete()
+                        current_user.state = 0
+                        session.commit()
+                        bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
+                except ValueError:
+                    bot.sendMessage(chat_id=chat_id, text='Please enter an ID number in your todo list only.', parse_mode='html')                       
                 
                 for row in current_user.todo_list:
                     i += 1
                     row.order_id = i
-                    session.commit()
                     show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
-                
+                session.commit()
                 bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
 
         if 'callback_query' in update:
@@ -131,8 +132,8 @@ def respond():
             for row in current_user.todo_list:
                 i += 1
                 row.order_id = i
-                session.commit()
                 show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+            session.commit()
 
             if callback_id == 1:
                 current_user.state = 1
