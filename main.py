@@ -1,5 +1,5 @@
 from flask import Flask, redirect, request
-from flask_sqlalchemy import SQLAlchemy, and_
+from flask_sqlalchemy import SQLAlchemy
 import telegram
 from credentials import telegram_token, telegram_api
 from logging import Logger
@@ -77,16 +77,23 @@ def respond():
             current_todo = Todo.query.filter_by(owner_id=chat_id).order_by((Todo.date_created.desc())).first()
             print(current_todo)
 
+            
+            
             #if user doesn't exist, add that user into database
             if current_user is None:
                 session.add(User(telegram_id=chat_id, username=username))
                 session.commit()
             
-            if text == '/start':
-                bot.sendChatAction(chat_id=chat_id, action='typing')
-                bot.sendMessage(chat_id=chat_id, text='Welcome to My Telegram Todo List', parse_mode='html', reply_markup=todo_keyboard)
             
-            elif current_user.state == 1:
+            if text == '/start':
+                # delete incomplete todo session when user enter Todo category and then failed to enter descriptions. This is flagged by post_desc=None 
+                Todo.query.filter_by(owner_id=chat_id).filter_by(post_desc=None).delete()
+                current_user.state = 0
+                session.commit()
+                bot.sendChatAction(chat_id=chat_id, action='typing')
+                bot.sendMessage(chat_id=chat_id, text='Welcome to My Telegram Todo List:', parse_mode='html', reply_markup=todo_keyboard)
+            
+            elif current_user.state == 1 and text != '/start':
                 session.add(Todo(owner=current_user, post_title=text))
                 current_user.state = 11
                 session.commit()
@@ -96,59 +103,75 @@ def respond():
                 current_todo.post_desc = text
                 current_user.state = 0
                 session.commit()
-                bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
+                bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.\nThanks for using this program!', parse_mode='html')
                 
                 for row in current_user.todo_list:
                     i += 1
                     row.order_id = i
                     show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
-                session.commit()
+                show_todo = 'You don\'t have anything to do yet. Click /start to get going' if i==0 else show_todo
                 bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
 
             elif current_user.state == 3:
-                try:
-                    delete_id = int(text)
-                    if Todo.query.filter_by(and_(owner_id=chat_id, order_id=delete_id)) is None:
-                        bot.sendMessage(chat_id=chat_id, text='There is no such item in your todo list.', parse_mode='html')
-                    else:
-                        Todo.query.filter_by(and_(owner_id=chat_id, order_id=delete_id)).delete()
+                if current_user.todo_list:
+                    try:
+                        delete_id = int(text)
+                        if Todo.query.filter_by(owner_id=chat_id).filter_by(order_id=delete_id).first() is None:
+                            bot.sendMessage(chat_id=chat_id, text='There is no such item in your todo list. Please re-enter a valid ID:', parse_mode='html')
+                            for row in current_user.todo_list:
+                                i += 1
+                                row.order_id = i
+                                show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+                            bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html')
+                        else:
+                            Todo.query.filter_by(owner_id=chat_id).filter_by(order_id=delete_id).delete()
+                            current_user.state = 0
+                            session.commit()
+                            bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.\nThanks for using this program! Click /start to continue.', parse_mode='html')
+                    except ValueError:
                         current_user.state = 0
                         session.commit()
-                        bot.sendMessage(chat_id=chat_id, text='Your todo list is updated.', parse_mode='html')
-                except ValueError:
-                    bot.sendMessage(chat_id=chat_id, text='Please enter an ID number in your todo list only.', parse_mode='html')                       
-                
+                        bot.sendMessage(chat_id=chat_id, text='Unknown command. Your session is reset. Click /start to get going.', parse_mode='html')
+                           
+                else:
+                    current_user.state = 0
+                    session.commit()
+                    bot.sendMessage(chat_id=chat_id, text='Unknown command.\nPlease click on what you want to do:', parse_mode='html', reply_markup=todo_keyboard)
+            else:
+                current_user.state = 0
+                session.commit()
+                bot.sendMessage(chat_id=chat_id, text='Unknown command.\nPlease click on what you want to do:', parse_mode='html', reply_markup=todo_keyboard)
+            
+            
+        if 'callback_query' in update:
+            callback_id = int(update['callback_query']['data'])
+            chat_id = update['callback_query']['message']['chat']['id']
+            Todo.query.filter_by(owner_id=chat_id).filter_by(post_desc=None).delete()
+            try:
+                current_user = User.query.filter_by(telegram_id=chat_id).first()
                 for row in current_user.todo_list:
                     i += 1
                     row.order_id = i
                     show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
+                show_todo = 'You don\'t have anything to do yet. Click /start to get going' if i==0 else show_todo
                 session.commit()
-                bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html', reply_markup=todo_keyboard)
 
-        if 'callback_query' in update:
-            chat_id = update['callback_query']['message']['chat']['id']
-            callback_id = int(update['callback_query']['data'])
-            current_user = User.query.filter_by(telegram_id=chat_id).first()
-            for row in current_user.todo_list:
-                i += 1
-                row.order_id = i
-                show_todo = show_todo + str(row.order_id) + '. ' + str(row.post_title) + ': ' + str(row.post_desc) + '\n'
-            session.commit()
-
-            if callback_id == 1:
-                current_user.state = 1
-                session.commit()
-                bot.sendMessage(chat_id=chat_id, text='Please Enter Todo title:', parse_mode='html')
-            if callback_id == 2:
-                current_user.state = 2
-                session.commit()
-                bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html')
-            if callback_id == 3:
-                current_user.state = 3
-                session.commit()
-                bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html')
-                bot.sendMessage(chat_id=chat_id, text='Please Enter the Todo ID you want to delete:', parse_mode='html')
-
+                if callback_id == 1:
+                    current_user.state = 1
+                    session.commit()
+                    bot.sendMessage(chat_id=chat_id, text='Please Enter Todo category:', parse_mode='html')
+                if callback_id == 2:
+                    current_user.state = 2
+                    session.commit()
+                    bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html')
+                    if i !=0: bot.sendMessage(chat_id=chat_id, text='What else do you want to do?', parse_mode='html', reply_markup=todo_keyboard)
+                if callback_id == 3:
+                    current_user.state = 3
+                    session.commit()
+                    bot.sendMessage(chat_id=chat_id, text=show_todo, parse_mode='html')
+                    if i !=0: bot.sendMessage(chat_id=chat_id, text='Please Enter the Todo ID you want to delete:', parse_mode='html')
+            except NotImplementedError:
+                bot.sendMessage(chat_id=chat_id, text='Click /start to get going!', parse_mode='html')                       
 
         return 'webhook works'
     else:
